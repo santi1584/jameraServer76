@@ -1,0 +1,5 @@
+# Generated logs from build.sh
+*.log
+
+# MariaDB volume if anyone bind-mounts instead of using named volumes
+mariadb-data/
