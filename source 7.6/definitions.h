@@ -130,16 +130,16 @@ enum passwordType_t{
 		#define OTSERV_HASH_SET __gnu_cxx::hash_set
 	#else
 		#ifndef __GXX_EXPERIMENTAL_CXX0X__
-			#include <tr1/unordered_map>
-			#include <tr1/unordered_set>
+			#include <unordered_map>
+			#include <unordered_set>
 		#else
 			// these only work, for some reason, with c++0x standard enabled
 			#include <unordered_map>
 			#include <unordered_set>
 		#endif
 
-		#define OTSERV_HASH_MAP std::tr1::unordered_map
-		#define OTSERV_HASH_SET std::tr1::unordered_set
+		#define OTSERV_HASH_MAP std::unordered_map
+		#define OTSERV_HASH_SET std::unordered_set
 	#endif
 	#include <assert.h>
 	#define ATOI64 atoll
@@ -202,16 +202,16 @@ enum passwordType_t{
 		#define OTSERV_HASH_SET __gnu_cxx::hash_set
 	#else
 		#ifndef __GXX_EXPERIMENTAL_CXX0X__
-			#include <tr1/unordered_map>
-			#include <tr1/unordered_set>
+			#include <unordered_map>
+			#include <unordered_set>
 		#else
 			// these only work, for some reason, with c++0x standard enabled
 			#include <unordered_map>
 			#include <unordered_set>
 		#endif
 
-		#define OTSERV_HASH_MAP std::tr1::unordered_map
-		#define OTSERV_HASH_SET std::tr1::unordered_set
+		#define OTSERV_HASH_MAP std::unordered_map
+		#define OTSERV_HASH_SET std::unordered_set
 	#endif
 	#define ATOI64 atoll
 

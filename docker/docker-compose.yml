@@ -1,0 +1,92 @@
+# Two-service stack: mariadb provides storage; otserv is the game server.
+#
+# Security posture:
+#  - otserv runs non-root, with a read-only root filesystem, all Linux
+#    capabilities dropped, and no-new-privileges. Whatever the binary does
+#    inside the container, it can't escalate.
+#  - The internal `otserv-net` is the only network either service can see.
+#    Outbound from otserv to the public internet would have to go through
+#    the docker daemon's default bridge, which we don't attach. Even if a
+#    Lua script tried to phone home, the syscall fails.
+#  - Game port is bound to 127.0.0.1 only — never exposed to your LAN.
+#  - mariadb's data lives in a named volume, not in the repo, so wiping
+#    the dev DB is `docker volume rm`.
+#
+# First boot:
+#   cd docker && docker compose up --build   # ~5 min first time
+#
+# Test it: `nc -zv localhost 7171` — server should accept the connection.
+
+services:
+
+  mariadb:
+    image: mariadb:10.6
+    container_name: jamera-mariadb
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: dev-root-pass-not-for-prod
+      MARIADB_DATABASE: ot_teste3
+      MARIADB_USER: otserv
+      MARIADB_PASSWORD: dev-otserv-pass-not-for-prod
+    volumes:
+      - mariadb-data:/var/lib/mysql
+      # The SQL dump from the upstream repo bootstraps the schema on first
+      # boot. MariaDB's init system picks up any *.sql under this directory
+      # and runs them. Path is relative to this compose file's location.
+      - ../ot_teste3.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    networks:
+      - otserv-net
+    # Tighten what the DB container can do — it shouldn't need to mount FS,
+    # change network config, or do anything privileged.
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  otserv:
+    build:
+      # Build context is the repo root (one level up). The Dockerfile lives
+      # in docker/ but needs to COPY the whole tree (source 7.6/, data/,
+      # config.lua, etc.) so the context has to encompass all of it.
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: jamera-otserv
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      OTSERV_SQL_HOST: mariadb
+      OTSERV_SQL_PORT: "3306"
+      OTSERV_SQL_USER: otserv
+      OTSERV_SQL_PASS: dev-otserv-pass-not-for-prod
+      OTSERV_SQL_DB: ot_teste3
+    ports:
+      # Localhost-only. Bind on `0.0.0.0:7171:7171` if you want LAN access
+      # from a phone for mobile testing, but understand what you're exposing.
+      - "127.0.0.1:7171:7171"
+    networks:
+      - otserv-net
+    # Hardening — defence in depth around the third-party binary.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  mariadb-data:
+    # Survives `docker compose down` so account/character data persists
+    # between server restarts. To wipe: `docker volume rm jamera-server_mariadb-data`.
+
+networks:
+  otserv-net:
+    driver: bridge
+    # No `internal: true` here because mariadb image needs to apt-pull init
+    # scripts on its very first boot; subsequent boots are network-cold but
+    # that's fine, the daemon caches.
