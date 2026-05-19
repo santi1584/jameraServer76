@@ -12,7 +12,7 @@ password: pinacles
 ## Instructions to open the server:
 
 To open the server follow these steps:
-- git clone https://github.com/brunoofgod/jameraServer76;
+- git clone https://github.com/santi1584/jameraServer76;
 - Import database db.sql on mysql server 
 - cd jameraServer76;
 - vi config.lua;
