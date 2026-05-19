@@ -3642,6 +3642,8 @@ bool Game::internalCreatureSay(Creature* creature, SpeakClasses type, const std:
 	for(it = list.begin(); it != list.end(); ++it){
 		(*it)->onCreatureSay(creature, type, text);
 	}
+
+	return true;
 }
 
 bool Game::getPathTo(const Creature* creature, const Position& destPos,
