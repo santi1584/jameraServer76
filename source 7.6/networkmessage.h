@@ -52,14 +52,24 @@ protected:
 	}
 public:
 	// simply read functions for incoming message
+	//
+	// Bounds-check policy: on read past m_MsgSize, the message is poisoned
+	// (m_ReadPos = m_MsgSize) and a zero/empty value is returned. Poisoning
+	// causes every subsequent read on the same message to also fail cleanly,
+	// so a malformed packet doesn't drag the parser through half-valid mid-
+	// buffer state.
 	uint8_t  GetByte(){
-		if(!canRead(1))
+		if(!canRead(1)){
+			m_ReadPos = m_MsgSize;
 			return 0;
+		}
 		return m_MsgBuf[m_ReadPos++];
 	}
 	uint16_t GetU16(){
-		if(!canRead(2))
+		if(!canRead(2)){
+			m_ReadPos = m_MsgSize;
 			return 0;
+		}
 		uint16_t v = *(uint16_t*)(m_MsgBuf + m_ReadPos);
 		m_ReadPos += 2;
 		return v;
@@ -68,8 +78,10 @@ public:
 		return GetU16();
 	}
 	uint32_t GetU32(){
-		if(!canRead(4))
+		if(!canRead(4)){
+			m_ReadPos = m_MsgSize;
 			return 0;
+		}
 		uint32_t v = *(uint32_t*)(m_MsgBuf + m_ReadPos);
 		m_ReadPos += 4;
 		return v;
