@@ -150,9 +150,17 @@ void Dispatcher::flush()
 	while(!pending.empty()){
 		Task* task = pending.front();
 		pending.pop_front();
+
+		OutputMessagePool* outputPool = OutputMessagePool::getInstance();
+		if(outputPool){
+			outputPool->startExecutionFrame();
+		}
 		(*task)();
 		delete task;
-		OutputMessagePool::getInstance()->sendAll();
+		if(outputPool){
+			outputPool->sendAll();
+		}
+
 		g_game.clearSpectatorCache();
 	}
 	#ifdef __DEBUG_SCHEDULER__
