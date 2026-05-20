@@ -135,13 +135,32 @@ void Dispatcher::addTask(Task* task, bool push_front /*= false*/)
 
 void Dispatcher::flush()
 {
-	Task* task = NULL;
-	while(!m_taskList.empty()){
-		task = getDispatcher().m_taskList.front();
-		m_taskList.pop_front();
+	// Snapshot the pending tasks under the lock, then drain *without*
+	// holding it — task bodies may call addTask() (which acquires the
+	// same mutex), and used to self-deadlock when flush was called from
+	// shutdown(). Tasks posted during the drain are silently dropped at
+	// addTask() since m_threadState != STATE_RUNNING by then; that
+	// matches the existing intended behavior at shutdown.
+	std::list<Task*> pending;
+	{
+		boost::unique_lock<boost::mutex> lock(m_taskLock);
+		pending.swap(m_taskList);
+	}
+
+	while(!pending.empty()){
+		Task* task = pending.front();
+		pending.pop_front();
+
+		OutputMessagePool* outputPool = OutputMessagePool::getInstance();
+		if(outputPool){
+			outputPool->startExecutionFrame();
+		}
 		(*task)();
 		delete task;
-		OutputMessagePool::getInstance()->sendAll();
+		if(outputPool){
+			outputPool->sendAll();
+		}
+
 		g_game.clearSpectatorCache();
 	}
 	#ifdef __DEBUG_SCHEDULER__
@@ -161,10 +180,11 @@ void Dispatcher::stop()
 
 void Dispatcher::shutdown()
 {
-	m_taskLock.lock();
-	m_threadState = Dispatcher::STATE_TERMINATED;
+	{
+		boost::unique_lock<boost::mutex> lock(m_taskLock);
+		m_threadState = Dispatcher::STATE_TERMINATED;
+	}
 	flush();
-	m_taskLock.unlock();
 	#ifdef __DEBUG_SCHEDULER__
 	std::cout << "Shutdown Dispatcher" << std::endl;
 	#endif
