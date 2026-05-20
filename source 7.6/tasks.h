@@ -48,12 +48,6 @@ inline Task* createTask(boost::function<void (void)> f){
 	return new Task(f);
 }
 
-enum DispatcherState{
-	STATE_RUNNING,
-	STATE_CLOSING,
-	STATE_TERMINATED,
-};
-
 class Dispatcher{
 public:
 	~Dispatcher() {}
