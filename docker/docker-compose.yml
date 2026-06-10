@@ -35,7 +35,11 @@ services:
       # and runs them. Path is relative to this compose file's location.
       - ../ot_teste3.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     networks:
-      - otserv-net
+      otserv-net:
+        # Static address: service-name DNS proved unreliable on hosts whose
+        # resolv.conf leaks the systemd-resolved stub into containers (seen
+        # under qemu emulation on arm64); a fixed IP needs no resolver.
+        ipv4_address: 172.28.0.10
     # Tighten what the DB container can do — it shouldn't need to mount FS,
     # change network config, or do anything privileged.
     security_opt:
@@ -47,6 +51,12 @@ services:
       retries: 20
 
   otserv:
+    # The 2017 autoconf build mis-links on native aarch64 (adrp relocation
+    # truncation in items.o regardless of gcc 7/8, -fPIC or -O level), so on
+    # ARM hosts the service runs as amd64 under qemu binfmt emulation — the
+    # architecture this setup was originally validated on. Install handlers
+    # once per boot: docker run --privileged --rm tonistiigi/binfmt --install amd64
+    platform: linux/amd64
     build:
       # Build context is the repo root (one level up). The Dockerfile lives
       # in docker/ but needs to COPY the whole tree (source 7.6/, data/,
@@ -59,7 +69,7 @@ services:
       mariadb:
         condition: service_healthy
     environment:
-      OTSERV_SQL_HOST: mariadb
+      OTSERV_SQL_HOST: 172.28.0.10
       OTSERV_SQL_PORT: "3306"
       OTSERV_SQL_USER: otserv
       OTSERV_SQL_PASS: dev-otserv-pass-not-for-prod
@@ -87,6 +97,9 @@ volumes:
 networks:
   otserv-net:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
     # No `internal: true` here because mariadb image needs to apt-pull init
     # scripts on its very first boot; subsequent boots are network-cold but
     # that's fine, the daemon caches.
