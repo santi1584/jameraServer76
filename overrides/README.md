@@ -12,9 +12,11 @@ and deleting a file here fully reverts that customization on the next build.
 
 ## Workflow
 
-1. Copy the file you want to change into the matching path here, e.g.:
+1. Copy the file you want to change into the matching path here, creating
+   subdirectories as needed (git only tracks the top-level folders), e.g.:
 
    ```
+   mkdir -p overrides/source
    cp "source 7.6/player.h" overrides/source/player.h
    ```
 

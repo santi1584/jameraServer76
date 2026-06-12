@@ -15,6 +15,7 @@ show_diffs() {
     echo "=== $overlay/$rel"
     if [ ! -f "$base/$rel" ]; then
       echo "    (new file — no upstream counterpart)"
+      diff -u /dev/null "$f"
     elif diff -u "$base/$rel" "$f"; then
       echo "    (identical to upstream — this override is a no-op, consider deleting it)"
     fi
