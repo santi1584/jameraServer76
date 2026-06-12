@@ -43,6 +43,23 @@ WORKDIR /src
 COPY . /src/jamera/
 RUN mv "/src/jamera/source 7.6" /src/source
 
+# Overlay custom overrides onto the pristine upstream trees before building.
+# Anything under overrides/source/ replaces the same relative path in the C++
+# source tree; overrides/data/ does the same for the game data tree (which the
+# runtime stage then copies pre-merged). The `find -printf` lines keep the
+# build log honest about exactly which overrides went into this image.
+# See overrides/README.md for the workflow.
+RUN if [ -d /src/jamera/overrides/source ]; then \
+      find /src/jamera/overrides/source -type f ! -name .gitkeep -printf 'override(source): %P\n' && \
+      cp -r /src/jamera/overrides/source/. /src/source/ && \
+      find /src/source -name .gitkeep -delete; \
+    fi \
+ && if [ -d /src/jamera/overrides/data ]; then \
+      find /src/jamera/overrides/data -type f ! -name .gitkeep -printf 'override(data): %P\n' && \
+      cp -r /src/jamera/overrides/data/. /src/jamera/data/ && \
+      find /src/jamera/data -name .gitkeep -delete; \
+    fi
+
 WORKDIR /src/source
 
 # Regenerate the autotools build files (the bundled Makefile/configure are
