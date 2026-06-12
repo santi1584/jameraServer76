@@ -52,8 +52,24 @@ protected:
 	}
 public:
 	// simply read functions for incoming message
-	uint8_t  GetByte(){return m_MsgBuf[m_ReadPos++];}
+	//
+	// Bounds-check policy: on read past m_MsgSize, the message is poisoned
+	// (m_ReadPos = m_MsgSize) and a zero/empty value is returned. Poisoning
+	// causes every subsequent read on the same message to also fail cleanly,
+	// so a malformed packet doesn't drag the parser through half-valid mid-
+	// buffer state.
+	uint8_t  GetByte(){
+		if(!canRead(1)){
+			m_ReadPos = m_MsgSize;
+			return 0;
+		}
+		return m_MsgBuf[m_ReadPos++];
+	}
 	uint16_t GetU16(){
+		if(!canRead(2)){
+			m_ReadPos = m_MsgSize;
+			return 0;
+		}
 		uint16_t v = *(uint16_t*)(m_MsgBuf + m_ReadPos);
 		m_ReadPos += 2;
 		return v;
@@ -62,6 +78,10 @@ public:
 		return GetU16();
 	}
 	uint32_t GetU32(){
+		if(!canRead(4)){
+			m_ReadPos = m_MsgSize;
+			return 0;
+		}
 		uint32_t v = *(uint32_t*)(m_MsgBuf + m_ReadPos);
 		m_ReadPos += 4;
 		return v;
@@ -71,7 +91,13 @@ public:
 	Position GetPosition();
 
 	// skips count unknown/unused bytes in an incoming message
-	void SkipBytes(int count){m_ReadPos += count;}
+	void SkipBytes(int count){
+		if(!canRead(count)){
+			m_ReadPos = m_MsgSize;
+			return;
+		}
+		m_ReadPos += count;
+	}
 
 	// simply write functions for outgoing message
 	void AddByte(uint8_t  value){
@@ -128,6 +154,11 @@ protected:
 	inline bool canAdd(int size)
 	{
 		return (size + m_ReadPos < NETWORKMESSAGE_MAXSIZE - 16);
+	};
+
+	inline bool canRead(int size)
+	{
+		return (size >= 0) && ((m_ReadPos + size) <= m_MsgSize);
 	};
 
 	int32_t m_MsgSize;

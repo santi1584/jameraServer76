@@ -40,8 +40,10 @@ int32_t NetworkMessage::decodeHeader()
 std::string NetworkMessage::GetString()
 {
 	uint16_t stringlen = GetU16();
-	if(stringlen >= (NETWORKMESSAGE_MAXSIZE - m_ReadPos))
+	if(!canRead(stringlen)){
+		m_ReadPos = m_MsgSize;
 		return std::string();
+	}
 
 	char* v = (char*)(m_MsgBuf + m_ReadPos);
 	m_ReadPos += stringlen;
@@ -50,10 +52,12 @@ std::string NetworkMessage::GetString()
 
 std::string NetworkMessage::GetRaw()
 {
-	uint16_t stringlen = m_MsgSize- m_ReadPos;
-	if(stringlen >= (NETWORKMESSAGE_MAXSIZE - m_ReadPos))
+	if(m_ReadPos > m_MsgSize){
+		m_ReadPos = m_MsgSize;
 		return std::string();
+	}
 
+	uint16_t stringlen = m_MsgSize - m_ReadPos;
 	char* v = (char*)(m_MsgBuf + m_ReadPos);
 	m_ReadPos += stringlen;
 	return std::string(v, stringlen);
