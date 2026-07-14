@@ -23,6 +23,7 @@
 
 #include "creature.h"
 #include "luascript.h"
+#include "shopinfo.h"
 #include "templates.h"
 
 //////////////////////////////////////////////////////////////////////
@@ -49,6 +50,10 @@ public:
 
 	bool loadNpcLib(std::string file);
 
+	//id of the shared npcsystem_onShopEvent lua function, captured once
+	//right after the npc lib is loaded (-1 when the lib does not define it)
+	int32_t getShopEventId() const {return m_shopEventId;}
+
 	static void pushState(lua_State *L, NpcState* state);
 	static void popState(lua_State *L, NpcState* &state);
 
@@ -73,12 +78,16 @@ protected:
 	static int luaSetNpcState(lua_State *L);
 	static int luaGetNpcName(lua_State *L);
 	static int luaGetNpcParameter(lua_State *L);
+	static int luaOpenShopWindow(lua_State *L);
+	static int luaCloseShopWindow(lua_State *L);
+	static int luaSendShopGoods(lua_State *L);
 	
 private:
 	virtual bool initState();
 	virtual bool closeState();
 
 	bool m_libLoaded;
+	int32_t m_shopEventId;
 };
 
 class NpcEventsHandler
@@ -428,6 +437,10 @@ public:
 	bool isLoaded(){return loaded;}
 
 	void setCreatureFocus(Creature* creature);
+
+	//dispatches a client shop window request to the npc's lua script
+	void onPlayerShopEvent(ShopEvent_t event, Player* player, uint16_t itemId,
+		uint8_t subType, uint8_t amount);
 
 	NpcScriptInterface* getScriptInterface();
 

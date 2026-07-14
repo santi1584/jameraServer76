@@ -31,6 +31,7 @@
 #include "protocol76.h"
 #include "party.h"
 #include "configmanager.h"
+#include "shopinfo.h"
 
 #include <vector>
 #include <ctime>
@@ -539,6 +540,20 @@ public:
 		{if(client) client->sendTradeItemRequest(player, item, ack);}
 	void sendTradeClose() const
 		{if(client) client->sendCloseTrade();}
+
+	//npc shop window
+	void setShopOwner(uint32_t npcId, const ShopInfoList& itemList)
+		{shopOwnerId = npcId; shopItemList = itemList;}
+	void clearShopOwner()
+		{shopOwnerId = 0; shopItemList.clear();}
+	uint32_t getShopOwnerId() const {return shopOwnerId;}
+	const ShopInfoList& getShopItemList() const {return shopItemList;}
+	void sendShopWindow(const std::string& npcName, const ShopInfoList& itemList) const
+		{if(client) client->sendShopWindow(npcName, itemList);}
+	void sendShopGoods() const
+		{if(client) client->sendShopGoods();}
+	void sendCloseShopWindow() const
+		{if(client) client->sendCloseShopWindow();}
 	void sendWorldLight(LightInfo& lightInfo)
 		{if(client) client->sendWorldLight(lightInfo);}
 	void sendChannelsDialog()
@@ -640,6 +655,10 @@ protected:
 
 protected:
 	Protocol76* client;
+
+	//npc shop window session (0 = no shop open)
+	uint32_t shopOwnerId;
+	ShopInfoList shopItemList;
 
 	uint32_t level;
 	uint32_t levelPercent;

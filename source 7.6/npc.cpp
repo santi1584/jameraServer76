@@ -1787,6 +1787,44 @@ void Npc::doMoveTo(Position target)
 	startAutoWalk(listDir);
 }
 
+void Npc::onPlayerShopEvent(ShopEvent_t event, Player* player, uint16_t itemId,
+	uint8_t subType, uint8_t amount)
+{
+	if(!m_scriptInterface || !player){
+		return;
+	}
+
+	int32_t shopEventId = m_scriptInterface->getShopEventId();
+	if(shopEventId == -1){
+		return;
+	}
+
+	//same dispatch pattern as NpcScript::onCreatureSay
+	if(m_scriptInterface->reserveScriptEnv()){
+		ScriptEnviroment* env = m_scriptInterface->getScriptEnv();
+
+		env->setScriptId(shopEventId, m_scriptInterface);
+		env->setRealPos(getPosition());
+		env->setNpc(this);
+
+		uint32_t cid = env->addThing(player);
+
+		lua_State* L = m_scriptInterface->getLuaState();
+		m_scriptInterface->pushFunction(shopEventId);
+		lua_pushnumber(L, cid);
+		lua_pushnumber(L, event);
+		lua_pushnumber(L, itemId);
+		lua_pushnumber(L, subType);
+		lua_pushnumber(L, amount);
+
+		m_scriptInterface->callFunction(5);
+		m_scriptInterface->releaseScriptEnv();
+	}
+	else{
+		std::cout << "[Error] Call stack overflow. Npc::onPlayerShopEvent" << std::endl;
+	}
+}
+
 void Npc::setCreatureFocus(Creature* creature)
 {
 	if(creature){
@@ -2270,6 +2308,7 @@ NpcScriptInterface::NpcScriptInterface() :
 LuaScriptInterface("Npc interface")
 {
 	m_libLoaded = false;
+	m_shopEventId = -1;
 	initState();
 }
 
@@ -2301,6 +2340,14 @@ bool NpcScriptInterface::loadNpcLib(std::string file)
 	}
 
 	m_libLoaded = true;
+
+	//capture the shared shop window dispatcher once; getEvent() moves the
+	//global into the events table, so this must happen right after lib load
+	m_shopEventId = getEvent("npcsystem_onShopEvent");
+	if(m_shopEventId == -1){
+		std::cout << "Warning: [NpcScriptInterface::loadNpcLib] npcsystem_onShopEvent not defined. Npc shop windows are disabled." << std::endl;
+	}
+
 	return true;
 }
 
@@ -2326,6 +2373,9 @@ void NpcScriptInterface::registerFunctions()
 	lua_register(m_luaState, "setNpcState", NpcScriptInterface::luaSetNpcState);
 	lua_register(m_luaState, "getNpcName", NpcScriptInterface::luaGetNpcName);
 	lua_register(m_luaState, "getNpcParameter", NpcScriptInterface::luaGetNpcParameter);
+	lua_register(m_luaState, "doPlayerOpenShopWindow", NpcScriptInterface::luaOpenShopWindow);
+	lua_register(m_luaState, "doPlayerCloseShopWindow", NpcScriptInterface::luaCloseShopWindow);
+	lua_register(m_luaState, "doPlayerSendShopGoods", NpcScriptInterface::luaSendShopGoods);
 }
 
 
@@ -2609,6 +2659,104 @@ int NpcScriptInterface::luaGetNpcName(lua_State* L)
 		lua_pushstring(L, "");
 	}
 
+	return 1;
+}
+
+int NpcScriptInterface::luaOpenShopWindow(lua_State *L)
+{
+	//doPlayerOpenShopWindow(cid, items)
+	//items = { {id = ..., subtype = ..., name = ..., buyPrice = ..., sellPrice = ...}, ... }
+	ScriptEnviroment* env = getScriptEnv();
+
+	Npc* npc = env->getNpc();
+	if(!npc){
+		reportErrorFunc("Npc not found.");
+		lua_pop(L, 2);
+		lua_pushnumber(L, LUA_ERROR);
+		return 1;
+	}
+
+	if(lua_istable(L, -1) == 0){
+		reportErrorFunc("item list is not a table.");
+		lua_pop(L, 2);
+		lua_pushnumber(L, LUA_ERROR);
+		return 1;
+	}
+
+	ShopInfoList itemList;
+	lua_pushnil(L);
+	while(lua_next(L, -2) != 0){
+		if(lua_istable(L, -1) != 0){
+			ShopInfo info;
+			info.itemId = (uint16_t)getField(L, "id");
+			info.subType = (uint8_t)getField(L, "subtype");
+			info.buyPrice = getFieldU32(L, "buyPrice");
+			info.sellPrice = getFieldU32(L, "sellPrice");
+			info.name = getFieldString(L, "name");
+			itemList.push_back(info);
+		}
+		lua_pop(L, 1); //removes the value, keeps the key for lua_next
+	}
+	lua_pop(L, 1); //items table
+
+	uint32_t cid = (uint32_t)popNumber(L);
+	Player* player = env->getPlayerByUID(cid);
+	if(!player){
+		reportErrorFunc(getErrorDesc(LUA_ERROR_PLAYER_NOT_FOUND));
+		lua_pushnumber(L, LUA_ERROR);
+		return 1;
+	}
+
+	//opening a shop with another npc supersedes (and closes) the previous one
+	if(player->getShopOwnerId() != 0 && player->getShopOwnerId() != npc->getID()){
+		player->sendCloseShopWindow();
+	}
+
+	player->setShopOwner(npc->getID(), itemList);
+	player->sendShopWindow(npc->getName(), itemList);
+	player->sendShopGoods();
+
+	lua_pushnumber(L, LUA_NO_ERROR);
+	return 1;
+}
+
+int NpcScriptInterface::luaCloseShopWindow(lua_State *L)
+{
+	//doPlayerCloseShopWindow(cid)
+	//Quietly ignores players that are already gone (logout/death path).
+	ScriptEnviroment* env = getScriptEnv();
+
+	Npc* npc = env->getNpc();
+	uint32_t cid = (uint32_t)popNumber(L);
+	Player* player = env->getPlayerByUID(cid);
+	if(!npc || !player || player->getShopOwnerId() != npc->getID()){
+		lua_pushnumber(L, LUA_ERROR);
+		return 1;
+	}
+
+	player->sendCloseShopWindow();
+	player->clearShopOwner();
+
+	lua_pushnumber(L, LUA_NO_ERROR);
+	return 1;
+}
+
+int NpcScriptInterface::luaSendShopGoods(lua_State *L)
+{
+	//doPlayerSendShopGoods(cid)
+	ScriptEnviroment* env = getScriptEnv();
+
+	Npc* npc = env->getNpc();
+	uint32_t cid = (uint32_t)popNumber(L);
+	Player* player = env->getPlayerByUID(cid);
+	if(!npc || !player || player->getShopOwnerId() != npc->getID()){
+		lua_pushnumber(L, LUA_ERROR);
+		return 1;
+	}
+
+	player->sendShopGoods();
+
+	lua_pushnumber(L, LUA_NO_ERROR);
 	return 1;
 }
 

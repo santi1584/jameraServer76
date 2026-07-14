@@ -36,6 +36,7 @@
 #include "creature.h"
 #include "player.h"
 #include "monster.h"
+#include "npc.h"
 #include "game.h"
 #include "tile.h"
 #include "house.h"
@@ -2955,6 +2956,92 @@ bool Game::playerCloseTrade(uint32_t playerId)
 		return false;
 
 	return internalCloseTrade(player);
+}
+
+bool Game::playerShopBuy(uint32_t playerId, uint16_t itemId, uint8_t subType, uint8_t amount)
+{
+	Player* player = getPlayerByID(playerId);
+	if(!player || player->isRemoved())
+		return false;
+
+	return internalPlayerShopEvent(player, SHOPEVENT_BUY, itemId, subType, amount);
+}
+
+bool Game::playerShopSell(uint32_t playerId, uint16_t itemId, uint8_t subType, uint8_t amount)
+{
+	Player* player = getPlayerByID(playerId);
+	if(!player || player->isRemoved())
+		return false;
+
+	return internalPlayerShopEvent(player, SHOPEVENT_SELL, itemId, subType, amount);
+}
+
+bool Game::playerShopClose(uint32_t playerId)
+{
+	Player* player = getPlayerByID(playerId);
+	if(!player || player->isRemoved())
+		return false;
+
+	uint32_t npcId = player->getShopOwnerId();
+	if(npcId == 0)
+		return false;
+
+	//The client already discarded the window; only clear the session and
+	//let the owning npc's script drop its state. No packet is echoed back.
+	player->clearShopOwner();
+
+	Creature* creature = getCreatureByID(npcId);
+	Npc* npc = creature ? creature->getNpc() : NULL;
+	if(npc && !npc->isRemoved()){
+		npc->onPlayerShopEvent(SHOPEVENT_CLOSE, player, 0, 0, 0);
+	}
+
+	return true;
+}
+
+//Pre-validation for client shop window requests. The owning npc's script
+//re-validates focus, range and the catalog before any transaction; prices
+//never come from the client.
+bool Game::internalPlayerShopEvent(Player* player, ShopEvent_t event, uint16_t itemId,
+	uint8_t subType, uint8_t amount)
+{
+	uint32_t npcId = player->getShopOwnerId();
+	if(npcId == 0)
+		return false;
+
+	Creature* creature = getCreatureByID(npcId);
+	Npc* npc = creature ? creature->getNpc() : NULL;
+	if(!npc || npc->isRemoved()){
+		//the npc is gone; invalidate the stale window
+		player->sendCloseShopWindow();
+		player->clearShopOwner();
+		return false;
+	}
+
+	if(amount == 0 || amount > 100)
+		return false;
+
+	if(!Position::areInRange<7,7,0>(player->getPosition(), npc->getPosition()))
+		return false;
+
+	//the requested entry must be part of the catalog this npc sent
+	const ShopInfoList& itemList = player->getShopItemList();
+	bool found = false;
+	for(ShopInfoList::const_iterator it = itemList.begin(); it != itemList.end(); ++it){
+		if(it->itemId == itemId && it->subType == subType){
+			if((event == SHOPEVENT_BUY && it->buyPrice > 0) ||
+				(event == SHOPEVENT_SELL && it->sellPrice > 0)){
+				found = true;
+				break;
+			}
+		}
+	}
+
+	if(!found)
+		return false;
+
+	npc->onPlayerShopEvent(event, player, itemId, subType, amount);
+	return true;
 }
 
 bool Game::internalCloseTrade(Player* player)

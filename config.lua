@@ -292,3 +292,11 @@
 	cleanCorpses = true
 	-- Clean pz area?
 	cleanPz = true
+
+	--- NPC SHOP WINDOW ---
+
+	-- Send the structured npc shop window (opcodes 0x7A-0x7C, see
+	-- docs/protocol/npc-shop.md) when a focused player says "trade".
+	-- Set to false if stock 7.6 clients connect: they debug-assert on the
+	-- unknown opcode. Conversational buying/selling always keeps working.
+	enableNpcShopWindow = true

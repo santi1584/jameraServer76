@@ -42,6 +42,8 @@
 #include <string>
 #include <iostream>
 #include <sstream>
+#include <set>
+#include <utility>
 #include <time.h>
 #include <list>
 
@@ -601,6 +603,18 @@ void Protocol76::parsePacket(NetworkMessage &msg)
 
 	case 0x78: // throw item
 		parseThrow(msg);
+		break;
+
+	case 0x7A: // npc shop: buy item
+		parseShopBuy(msg);
+		break;
+
+	case 0x7B: // npc shop: sell item
+		parseShopSell(msg);
+		break;
+
+	case 0x7C: // npc shop: close window
+		parseShopClose(msg);
 		break;
 
 	case 0x7D: // Request trade
@@ -1386,6 +1400,29 @@ void Protocol76::parseHouseWindow(NetworkMessage &msg)
 	addGameTask(&Game::playerUpdateHouseWindow, player->getID(), doorId, id, text);
 }
 
+void Protocol76::parseShopBuy(NetworkMessage& msg)
+{
+	uint16_t itemId = msg.GetU16();
+	uint8_t subType = msg.GetByte();
+	uint8_t amount = msg.GetByte();
+
+	addGameTask(&Game::playerShopBuy, player->getID(), itemId, subType, amount);
+}
+
+void Protocol76::parseShopSell(NetworkMessage& msg)
+{
+	uint16_t itemId = msg.GetU16();
+	uint8_t subType = msg.GetByte();
+	uint8_t amount = msg.GetByte();
+
+	addGameTask(&Game::playerShopSell, player->getID(), itemId, subType, amount);
+}
+
+void Protocol76::parseShopClose(NetworkMessage& msg)
+{
+	addGameTask(&Game::playerShopClose, player->getID());
+}
+
 void Protocol76::parseRequestTrade(NetworkMessage& msg)
 {
 	Position pos = msg.GetPosition();
@@ -1803,6 +1840,70 @@ void Protocol76::sendCloseTrade()
 	if(msg){
 		TRACK_MESSAGE(msg);
 		msg->AddByte(0x7F);
+	}
+}
+
+void Protocol76::sendShopWindow(const std::string& npcName, const ShopInfoList& itemList)
+{
+	NetworkMessage_ptr msg = getOutputBuffer();
+	if(msg){
+		TRACK_MESSAGE(msg);
+		msg->AddByte(0x7A);
+		msg->AddString(npcName);
+		msg->AddU16(itemList.size());
+		for(ShopInfoList::const_iterator it = itemList.begin(); it != itemList.end(); ++it){
+			msg->AddU16(it->itemId);
+			msg->AddItemId(it->itemId);
+			msg->AddByte(it->subType);
+			msg->AddString(it->name);
+			msg->AddU32(it->buyPrice);
+			msg->AddU32(it->sellPrice);
+		}
+	}
+}
+
+void Protocol76::sendShopGoods()
+{
+	NetworkMessage_ptr msg = getOutputBuffer();
+	if(msg){
+		TRACK_MESSAGE(msg);
+		msg->AddByte(0x7B);
+		msg->AddU32(g_game.getMoney(player));
+
+		std::list<std::pair<uint16_t, uint16_t> > goods;
+		std::set<uint16_t> countedIds;
+		const ShopInfoList& itemList = player->getShopItemList();
+		for(ShopInfoList::const_iterator it = itemList.begin(); it != itemList.end(); ++it){
+			if(it->sellPrice == 0 || countedIds.find(it->itemId) != countedIds.end()){
+				continue;
+			}
+			countedIds.insert(it->itemId);
+			uint32_t count = player->__getItemTypeCount(it->itemId);
+			if(count > 0){
+				if(count > 0xFFFF){
+					count = 0xFFFF;
+				}
+				goods.push_back(std::make_pair(it->itemId, (uint16_t)count));
+			}
+			if(goods.size() == 255){
+				break;
+			}
+		}
+
+		msg->AddByte(goods.size());
+		for(std::list<std::pair<uint16_t, uint16_t> >::const_iterator it = goods.begin(); it != goods.end(); ++it){
+			msg->AddU16(it->first);
+			msg->AddU16(it->second);
+		}
+	}
+}
+
+void Protocol76::sendCloseShopWindow()
+{
+	NetworkMessage_ptr msg = getOutputBuffer();
+	if(msg){
+		TRACK_MESSAGE(msg);
+		msg->AddByte(0x7C);
 	}
 }
 
