@@ -27,6 +27,7 @@ function Stubs.reset()
 	Stubs.shopOwner = {}
 	Stubs.buyResult = LUA_NO_ERROR
 	Stubs.sellResult = LUA_NO_ERROR
+	Stubs.config = {}
 	Stubs.calls = {
 		opened = {},
 		closed = {},
@@ -117,6 +118,12 @@ end
 
 function getNpcCid()
 	return Stubs.npc.cid
+end
+
+-- config.lua access (luascript.cpp luaGetConfigValue); nil for unset keys,
+-- booleans arrive as booleans (ConfigManager::moveValue).
+function getConfigValue(key)
+	return Stubs.config[key]
 end
 
 -- ---------------------------------------------------------------------------

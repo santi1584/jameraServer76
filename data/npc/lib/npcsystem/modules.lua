@@ -726,6 +726,12 @@ if(Modules == nil) then
 
 	-- Sends the full catalog to cid and registers the shop session.
 	function ShopModule:sendShopWindow(cid)
+		-- config.lua kill switch: stock 7.6 clients debug-assert on the
+		-- unknown 0x7A opcode, so hosts serving legacy clients can turn the
+		-- window off. Unset or true = enabled; conversation is unaffected.
+		if(getConfigValue('enableNpcShopWindow') == false) then
+			return false
+		end
 		if(self.shopItems == nil or table.getn(self.shopItems) == 0) then
 			return false
 		end

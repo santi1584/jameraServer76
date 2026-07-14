@@ -6,6 +6,11 @@ receives the full catalog; the client can then send buy/sell requests that are
 validated entirely server-side. The conversational flow ("buy rope" → "yes")
 keeps working unchanged as a fallback.
 
+The window can be disabled server-wide with `enableNpcShopWindow = false` in
+`config.lua` (unset or `true` = enabled) — useful when stock 7.6 clients
+connect, since they debug-assert on unknown opcodes. Conversational
+buying/selling works regardless of the flag.
+
 These opcodes are unused by the 7.6 protocol in both directions (verified
 against every `case` in `Protocol76::parsePacket` and every outgoing
 `AddByte(type)` in `protocol76.cpp`). They deliberately do **not** touch the

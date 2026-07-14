@@ -172,3 +172,27 @@ Test.case('opening a shop with a second npc supersedes the first session', funct
 	assert_true(ShopModule.shopSessions[PLAYER] ~= nil, 'second session intact')
 	assert_nil(shop1.shopOpenFor, 'first module cleaned up')
 end)
+
+Test.case('enableNpcShopWindow = false disables the window but not conversation', function()
+	Stubs.reset()
+	Stubs.config.enableNpcShopWindow = false
+	local npcHandler, shop = focusedShopNpc('rope,2120,50')
+
+	npcHandler.keywordHandler:processMessage(PLAYER, 'trade')
+	assert_eq(table.getn(Stubs.calls.opened), 0, 'no open call')
+	assert_nil(ShopModule.shopSessions[PLAYER], 'no session')
+
+	-- Conversational buying keeps working with the window disabled.
+	npcHandler.keywordHandler:processMessage(PLAYER, 'rope')
+	npcHandler.keywordHandler:processMessage(PLAYER, 'yes')
+	assert_eq(table.getn(Stubs.calls.buys), 1, 'conversational purchase intact')
+end)
+
+Test.case('enableNpcShopWindow = true (and unset) keeps the window enabled', function()
+	Stubs.reset()
+	Stubs.config.enableNpcShopWindow = true
+	local npcHandler, shop = focusedShopNpc('rope,2120,50')
+
+	npcHandler.keywordHandler:processMessage(PLAYER, 'trade')
+	assert_eq(table.getn(Stubs.calls.opened), 1, 'window opened')
+end)
