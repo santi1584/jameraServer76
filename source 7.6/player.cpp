@@ -65,6 +65,7 @@ Player::Player(const std::string& _name, Protocol76 *p) :
 Creature()
 {
 	client = p;
+	shopOwnerId = 0;
 	isConnecting = false;
 	if(client){
 		client->setPlayer(this);

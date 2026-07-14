@@ -28,6 +28,7 @@
 
 #include "map.h"
 #include "position.h"
+#include "shopinfo.h"
 #include "item.h"
 #include "container.h"
 #include "player.h"
@@ -359,6 +360,8 @@ public:
 
 	bool internalStartTrade(Player* player, Player* partner, Item* tradeItem);
 	bool internalCloseTrade(Player* player);
+	bool internalPlayerShopEvent(Player* player, ShopEvent_t event, uint16_t itemId,
+		uint8_t subType, uint8_t amount);
 	bool internalBroadcastMessage(Player* player, const std::string& text);
 	
 	bool anonymousBroadcastMessage(MessageClasses type, const std::string& text);
@@ -401,6 +404,9 @@ public:
 	bool playerAcceptTrade(uint32_t playerId);
 	bool playerLookInTrade(uint32_t playerId, bool lookAtCounterOffer, int index);
 	bool playerCloseTrade(uint32_t playerId);
+	bool playerShopBuy(uint32_t playerId, uint16_t itemId, uint8_t subType, uint8_t amount);
+	bool playerShopSell(uint32_t playerId, uint16_t itemId, uint8_t subType, uint8_t amount);
+	bool playerShopClose(uint32_t playerId);
 	bool playerSetAttackedCreature(uint32_t playerId, uint32_t creatureId);
 	bool playerFollowCreature(uint32_t playerId, uint32_t creatureId);
 	bool playerCancelAttackAndFollow(uint32_t playerId);

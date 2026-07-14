@@ -26,6 +26,7 @@
 #include "protocol.h"
 #include "enums.h"
 #include "creature.h"
+#include "shopinfo.h"
 
 enum connectResult_t{
 	CONNECT_SUCCESS = 1,
@@ -122,6 +123,11 @@ private:
 	void parseAcceptTrade(NetworkMessage& msg);
 	void parseCloseTrade();
 
+	//npc shop methods
+	void parseShopBuy(NetworkMessage& msg);
+	void parseShopSell(NetworkMessage& msg);
+	void parseShopClose(NetworkMessage& msg);
+
 	//VIP methods
 	void parseAddVip(NetworkMessage& msg);
 	void parseRemoveVip(NetworkMessage& msg);
@@ -182,6 +188,10 @@ private:
 
 	void sendTradeItemRequest(const Player* player, const Item* item, bool ack);
 	void sendCloseTrade();
+
+	void sendShopWindow(const std::string& npcName, const ShopInfoList& itemList);
+	void sendShopGoods();
+	void sendCloseShopWindow();
 
 	void sendTextWindow(uint32_t windowTextId, Item* item, uint16_t maxlen, bool canWrite);
 	void sendTextWindow(uint32_t windowTextId, uint32_t itemId, const std::string& text);
