@@ -643,13 +643,63 @@ if(Modules == nil) then
 		end
 	end
 	
+	-- Normalized shop catalog --------------------------------------------------
+	-- Every buyable/sellable item is also retained in self.shopItems (an array,
+	-- in parse order) and self.shopItemsByKey (a map keyed by itemid/subtype).
+	-- This catalog is the only source of prices for shop window transactions;
+	-- nothing coming from the client is trusted.
+
+	-- Builds the key used to identify a catalog entry. Items without
+	-- charges/fluid subtype normalize to subtype 0.
+	function ShopModule:catalogKey(itemid, subtype)
+		return itemid .. '/' .. (subtype or 0)
+	end
+
+	-- Returns the catalog entry for (itemid, subtype), or nil.
+	function ShopModule:getCatalogEntry(itemid, subtype)
+		if(self.shopItemsByKey == nil) then
+			return nil
+		end
+		return self.shopItemsByKey[self:catalogKey(itemid, subtype)]
+	end
+
+	-- Adds or merges a catalog entry. buyPrice/sellPrice may be nil to leave
+	-- the respective side untouched (0 means "not buyable"/"not sellable").
+	function ShopModule:addCatalogEntry(itemid, subtype, name, buyPrice, sellPrice, charges)
+		if(self.shopItems == nil) then
+			self.shopItems = {}
+			self.shopItemsByKey = {}
+		end
+		local key = self:catalogKey(itemid, subtype)
+		local entry = self.shopItemsByKey[key]
+		if(entry == nil) then
+			entry = {
+					itemid = itemid,
+					subtype = subtype or 0,
+					name = name,
+					buyPrice = 0,
+					sellPrice = 0,
+					charges = nil
+				}
+			table.insert(self.shopItems, entry)
+			self.shopItemsByKey[key] = entry
+		end
+		if(buyPrice ~= nil) then
+			entry.buyPrice = buyPrice
+			entry.charges = charges
+		end
+		if(sellPrice ~= nil) then
+			entry.sellPrice = sellPrice
+		end
+	end
+
 	-- Initializes the module and associates handler to it.
 	function ShopModule:init(handler)
 		self.npcHandler = handler
 		self.yesNode = KeywordNode:new(SHOP_YESWORD, ShopModule.onConfirm, {module = self})
 		self.noNode = KeywordNode:new(SHOP_NOWORD, ShopModule.onDecline, {module = self})
 		self.noText = handler:getMessage(MESSAGE_DECLINE)
-		
+
 		return true
 	end
 	
@@ -681,6 +731,15 @@ if(Modules == nil) then
 	--	charges - The charges of each rune or fluidcontainer item. Can be left out if it is not a rune/fluidcontainer and no realname is needed. Default value is nil.
 	--	realname - The real, full name for the item. Will be used as ITEMNAME in MESSAGE_ONBUY and MESSAGE_ONSELL if defined. Default value is nil (keywords[1]/names  will be used)
 	function ShopModule:addBuyableItem(names, itemid, cost, charges, realname)
+		-- Retain a normalized catalog entry (used by the client shop window).
+		local subtype = 0
+		local entryCharges = nil
+		if(isItemRune(itemid) == TRUE or isItemFluidContainer(itemid) == TRUE) then
+			subtype = charges
+			entryCharges = charges
+		end
+		self:addCatalogEntry(itemid, subtype, realname or names[1], cost, nil, entryCharges)
+
 		for i, name in pairs(names) do
 			local parameters = {
 					itemid = itemid,
@@ -708,6 +767,9 @@ if(Modules == nil) then
 	--	cost = the price of one single item with item id itemid ^^
 	--	realname - The real, full name for the item. Will be used as ITEMNAME in MESSAGE_ONBUY and MESSAGE_ONSELL if defined. Default value is nil (keywords[2]/names will be used)
 	function ShopModule:addSellableItem(names, itemid, cost, realname)
+		-- Retain a normalized catalog entry (used by the client shop window).
+		self:addCatalogEntry(itemid, 0, realname or names[1], nil, cost, nil)
+
 		for i, name in pairs(names) do
 			local parameters = {
 					itemid = itemid,
