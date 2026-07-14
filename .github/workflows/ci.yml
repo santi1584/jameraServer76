@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  lua-tests:
+    name: npcsystem Lua tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lua 5.1
+        run: sudo apt-get update && sudo apt-get install -y lua5.1
+      - name: Run tests
+        run: tests/run-lua-tests.sh
+
+  server-build:
+    name: otserv Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build server image (builder stage compiles the C++ source)
+        run: docker build -f docker/Dockerfile -t otserv:ci .
