@@ -22,6 +22,18 @@ if(Modules == nil) then
 	-- Constants used to separate buying from selling.
 	SHOPMODULE_SELL_ITEM 	= 1
 	SHOPMODULE_BUY_ITEM 	= 2
+
+	-- Keywords that open the client-side shop window for the focused player.
+	SHOP_TRADEWORDS = {'trade'}
+
+	-- Maximum amount per single shop window transaction.
+	SHOPMODULE_MAX_WINDOW_AMOUNT = 100
+
+	-- Shop window event types. Mirrored from ShopEvent_t in the C++ source
+	-- ("source 7.6/shopinfo.h").
+	SHOPEVENT_BUY = 1
+	SHOPEVENT_SELL = 2
+	SHOPEVENT_CLOSE = 3
 	
 	
 	Modules = {
@@ -548,6 +560,10 @@ if(Modules == nil) then
 	}
 	-- Add it to the parseable module list.
 	Modules.parseableModules['module_shop'] = ShopModule
+
+	-- Active shop window sessions, shared by all ShopModule instances.
+	-- [playerCid] = {module = <ShopModule instance>, npcCid = <owning npc cid>}
+	ShopModule.shopSessions = {}
 	
 	-- Creates a new instance of ShopModule
 	function ShopModule:new()
@@ -693,12 +709,175 @@ if(Modules == nil) then
 		end
 	end
 
+	-- Shop window ---------------------------------------------------------------
+	-- Sends the shop catalog to the client and tracks the open session. All
+	-- transaction requests coming back are validated against the catalog; the
+	-- conversational buy/sell flow below stays available as a fallback.
+
+	-- Callback for the SHOP_TRADEWORDS keywords. Opens the client shop window,
+	-- but only for the player this npc currently focuses.
+	function ShopModule.requestTrade(cid, message, keywords, parameters, node)
+		local module = parameters.module
+		if(cid ~= module.npcHandler.focus) then
+			return false
+		end
+		return module:sendShopWindow(cid)
+	end
+
+	-- Sends the full catalog to cid and registers the shop session.
+	function ShopModule:sendShopWindow(cid)
+		if(self.shopItems == nil or table.getn(self.shopItems) == 0) then
+			return false
+		end
+		local items = {}
+		for i, entry in ipairs(self.shopItems) do
+			table.insert(items, {
+					id = entry.itemid,
+					subtype = entry.subtype,
+					name = entry.name,
+					buyPrice = entry.buyPrice,
+					sellPrice = entry.sellPrice
+				})
+		end
+		if(doPlayerOpenShopWindow(cid, items) ~= LUA_NO_ERROR) then
+			return false
+		end
+		ShopModule.shopSessions[cid] = {module = self, npcCid = getNpcCid()}
+		self.shopOpenFor = cid
+		return true
+	end
+
+	-- Closes cid's shop window if this module owns it, and clears the session.
+	function ShopModule:closeShopWindow(cid)
+		if(cid == nil) then
+			return
+		end
+		local session = ShopModule.shopSessions[cid]
+		if(session ~= nil and session.module == self) then
+			doPlayerCloseShopWindow(cid)
+			ShopModule.shopSessions[cid] = nil
+		end
+		if(self.shopOpenFor == cid) then
+			self.shopOpenFor = nil
+		end
+	end
+
+	-- Validates a shop window transaction request. Returns the catalog entry
+	-- when everything is sound, or nil. Every check is server-side: the client
+	-- only supplies (itemid, subtype, amount); prices always come from the
+	-- catalog retained at parse time.
+	function ShopModule:validateShopEvent(cid, itemid, subtype, amount)
+		local npcHandler = self.npcHandler
+		if(cid ~= npcHandler.focus or not npcHandler:isInRange(cid)) then
+			-- The conversation ended (or the player moved) without the usual
+			-- callbacks firing; invalidate the stale window.
+			self:closeShopWindow(cid)
+			return nil
+		end
+		amount = tonumber(amount)
+		if(amount == nil or amount < 1 or amount > SHOPMODULE_MAX_WINDOW_AMOUNT) then
+			return nil
+		end
+		local entry = self:getCatalogEntry(itemid, subtype)
+		if(entry == nil) then
+			return nil
+		end
+		return entry, amount
+	end
+
+	-- Handles SHOPEVENT_BUY. Reuses doPlayerBuyItem so gameplay semantics
+	-- match the conversational flow exactly.
+	function ShopModule:onShopBuy(cid, itemid, subtype, amount)
+		local entry, checkedAmount = self:validateShopEvent(cid, itemid, subtype, amount)
+		if(entry == nil or entry.buyPrice <= 0) then
+			return false
+		end
+		local totalCost = entry.buyPrice * checkedAmount
+		local parseInfo = {
+				[TAG_PLAYERNAME] = getPlayerName(cid),
+				[TAG_ITEMCOUNT] = checkedAmount,
+				[TAG_TOTALCOST] = totalCost,
+				[TAG_ITEMNAME] = entry.name
+			}
+		local ret = doPlayerBuyItem(cid, entry.itemid, checkedAmount, totalCost, entry.charges)
+		if(ret == LUA_NO_ERROR) then
+			local msg = self.npcHandler:getMessage(MESSAGE_ONBUY)
+			self.npcHandler:say(self.npcHandler:parseMessage(msg, parseInfo))
+			doPlayerSendShopGoods(cid)
+			return true
+		else
+			local msg = self.npcHandler:getMessage(MESSAGE_NEEDMOREMONEY)
+			self.npcHandler:say(self.npcHandler:parseMessage(msg, parseInfo))
+			return false
+		end
+	end
+
+	-- Handles SHOPEVENT_SELL. Reuses doPlayerSellItem so gameplay semantics
+	-- match the conversational flow exactly.
+	function ShopModule:onShopSell(cid, itemid, subtype, amount)
+		local entry, checkedAmount = self:validateShopEvent(cid, itemid, subtype, amount)
+		if(entry == nil or entry.sellPrice <= 0) then
+			return false
+		end
+		local totalPayout = entry.sellPrice * checkedAmount
+		local parseInfo = {
+				[TAG_PLAYERNAME] = getPlayerName(cid),
+				[TAG_ITEMCOUNT] = checkedAmount,
+				[TAG_TOTALCOST] = totalPayout,
+				[TAG_ITEMNAME] = entry.name
+			}
+		local ret = doPlayerSellItem(cid, entry.itemid, checkedAmount, totalPayout)
+		if(ret == LUA_NO_ERROR) then
+			local msg = self.npcHandler:getMessage(MESSAGE_ONSELL)
+			self.npcHandler:say(self.npcHandler:parseMessage(msg, parseInfo))
+			doPlayerSendShopGoods(cid)
+			return true
+		else
+			local msg = self.npcHandler:getMessage(MESSAGE_NOTHAVEITEM)
+			self.npcHandler:say(self.npcHandler:parseMessage(msg, parseInfo))
+			return false
+		end
+	end
+
+	-- Handles SHOPEVENT_CLOSE sent by the client. The window is already gone
+	-- client-side and the engine session is cleared; only drop the Lua session.
+	function ShopModule:onShopClose(cid)
+		local session = ShopModule.shopSessions[cid]
+		if(session ~= nil and session.module == self) then
+			ShopModule.shopSessions[cid] = nil
+		end
+		if(self.shopOpenFor == cid) then
+			self.shopOpenFor = nil
+		end
+		return true
+	end
+
+	-- Close the shop window whenever this npc loses its conversation partner.
+	-- Farewell words and the idle timeout funnel through CALLBACK_FAREWELL;
+	-- walkaway and logout/death of the focused player funnel through
+	-- CALLBACK_CREATURE_DISAPPEAR (see npchandler.lua).
+	function ShopModule:callbackOnFarewell()
+		self:closeShopWindow(self.shopOpenFor)
+		return true
+	end
+
+	function ShopModule:callbackCreatureDisappear(cid)
+		if(self.shopOpenFor == cid) then
+			self:closeShopWindow(cid)
+		end
+		return true
+	end
+	-- NpcHandler:processModuleCallback checks for callbackOnCreatureDisappear
+	-- but invokes callbackCreatureDisappear.
+	ShopModule.callbackOnCreatureDisappear = ShopModule.callbackCreatureDisappear
+
 	-- Initializes the module and associates handler to it.
 	function ShopModule:init(handler)
 		self.npcHandler = handler
 		self.yesNode = KeywordNode:new(SHOP_YESWORD, ShopModule.onConfirm, {module = self})
 		self.noNode = KeywordNode:new(SHOP_NOWORD, ShopModule.onDecline, {module = self})
 		self.noText = handler:getMessage(MESSAGE_DECLINE)
+		handler.keywordHandler:addKeyword(SHOP_TRADEWORDS, ShopModule.requestTrade, {module = self})
 
 		return true
 	end
@@ -893,5 +1072,27 @@ if(Modules == nil) then
 		module.npcHandler:say(msg)
 		module.npcHandler:resetNpc()
 		return true
+	end
+
+	-- Entry point for client shop window packets. Dispatched from the engine
+	-- (Npc::onPlayerShopEvent) with the owning npc as script context; the
+	-- engine captures this function once, right after the npcsystem lib loads.
+	function npcsystem_onShopEvent(cid, event, itemid, subtype, amount)
+		local session = ShopModule.shopSessions[cid]
+		if(session == nil or session.module == nil) then
+			return false
+		end
+		if(session.npcCid ~= getNpcCid()) then
+			-- The event reached an npc that does not own this player's session.
+			return false
+		end
+		if(event == SHOPEVENT_BUY) then
+			return session.module:onShopBuy(cid, itemid, subtype, amount)
+		elseif(event == SHOPEVENT_SELL) then
+			return session.module:onShopSell(cid, itemid, subtype, amount)
+		elseif(event == SHOPEVENT_CLOSE) then
+			return session.module:onShopClose(cid)
+		end
+		return false
 	end
 end

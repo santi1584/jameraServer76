@@ -16,5 +16,9 @@ dofile('data/npc/scripts/lib/npcsystem/modules.lua')
 NPCHANDLER_TALKDELAY = TALKDELAY_NONE
 
 dofile('tests/lua/test_catalog.lua')
+dofile('tests/lua/test_open_close.lua')
+dofile('tests/lua/test_buy.lua')
+dofile('tests/lua/test_sell.lua')
+dofile('tests/lua/test_conversational.lua')
 
 Test.summary()
